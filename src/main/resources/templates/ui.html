@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html xmlns:th="http://thymeleaf.org" lang="ru">
+<head>
+    <link rel="stylesheet" href="https://unpkg.com/x-data-spreadsheet@1.1.5/dist/xspreadsheet.css">
+    <link rel="stylesheet" href="https://crm/fins_rus/files/custom/mylist.css">
+    <meta charset="UTF-8">
+    <script src="https://unpkg.com/x-data-spreadsheet@1.1.5/dist/xspreadsheet.js"></script>
+    <title>Май Лист</title>
+    <script th:inline="javascript">
+        /*<![CDATA[*/
+            var login = /*[[${login}]]*/ "";
+            var info = /*[[${info}]]*/ "";
+            var rowPartSize = /*[[${rowPartSize}]]*/ 10;
+            var rowMaxSize = /*[[${rowMaxSize}]]*/ 100000;
+            var colMaxSize = /*[[${colMaxSize}]]*/ 38;
+        /*]]>*/
+    </script>
+</head>
+<body>
+    <div id="myModal" class="modal">
+        <div class="modal-content">
+            <span class="modal-close">&times;</span>
+            <p></p>
+            <span class="modal-span">Моя операция:</span>
+            <select id="operationControl" class="modal-input">
+                <option value="" />
+                <option th:each="o : ${operation}" th:value="${o.type}" th:text="${o.type}"/>
+            </select>
+            <textarea id="infoArea" class="modal-input infoArea" readonly></textarea>
+            <span class="modal-span">Маркер:</span>
+            <input id="marker" placeholder="Маркер" class="modal-input">
+            <span class="modal-span">Кампания:</span>
+            <input id="campaign" placeholder="Кампания" class="modal-input">
+            <input id="btnExec" type="button" class="modal-button" value="Выполнить операцию">
+        </div>
+    </div>
+    <div id="logModal" class="modal">
+        <div class="modal-content-log">
+            <span class="modal-close">&times;</span>
+            <p></p>
+            <span class="modal-span">Обработка:</span>
+            <textarea id="logArea" class="modal-input logArea" readonly></textarea>
+        </div>
+    </div>
+    <div class="button-content">
+        <input id="btnModal" type="button" class="form-button" value="Выполнить">
+        <input id="btnClear" type="button" class="form-button" value="Очистить">
+        <input id="btnExport" type="button" class="form-button" value="Экспорт">
+    </div>
+    <div id="xspreadsheet"></div>
+    <script>
+        data = new x_spreadsheet("#xspreadsheet", {
+            showToolbar: false,
+            showContextmenu: false,
+            view: {
+                height: () => document.documentElement.clientHeight-65 /*500*/,
+                width: () => document.documentElement.clientWidth-10 /*900*/
+            },
+            row: {len: rowMaxSize},
+            col: {len: colMaxSize}}
+        );
+
+        var bottomBar = document.getElementsByClassName("x-spreadsheet-bottombar")[0];
+        //bottomBar.style.display = "none";
+    </script>
+    <script>
+        var logArea = document.getElementById("logArea");
+
+        function formatDate() {
+            var date = new Date();
+            var format = "dd.mm.yyyy hh24:mi:ss";
+            const map = {
+                mm: ('0' + date.getMonth() + 1).slice(-2),
+                dd: ('0' + date.getDate()).slice(-2),
+                yyyy: date.getFullYear(),
+                yy: date.getFullYear().toString().slice(-2),
+                hh24: ('0' + date.getHours()).slice(-2),
+                mi: ('0' + date.getMinutes()).slice(-2),
+                ss: ('0' + date.getSeconds()).slice(-2)
+            }
+
+            return format.replace(/mm|dd|yyyy|yy|hh24|mi|ss/gi, matched => map[matched]);
+        }
+        function log(s) {
+            logArea.value = logArea.value + formatDate() + " " + s + "\n";
+            //logArea.style.height = "auto";
+            //logArea.style.height = (logArea.scrollHeight)+"px";
+        }
+    </script>
+    <script>
+        var myModal = document.getElementById("myModal");
+        var logModal = document.getElementById("logModal");
+
+        var btnModal = document.getElementById("btnModal");
+        btnModal.onclick = function() {
+            myModal.style.display = "block";
+        }
+
+        var spans = document.getElementsByClassName("modal-close");
+        Array.prototype.forEach.call(spans, function(span) {
+            span.onclick = function() {
+                myModal.style.display = "none";
+                logModal.style.display = "none";
+            }
+        });
+
+        window.onclick = function(event) {
+            if (event.target == myModal || event.target == logModal) {
+                myModal.style.display = "none";
+                logModal.style.display = "none";
+            }
+        }
+
+        var btnExec = document.getElementById("btnExec");
+        btnExec.onclick = function() {
+            btnModal.disabled = true;
+            myModal.style.display = "none";
+            logModal.style.display = "block";
+            logArea.value = "";
+
+            var formData = new FormData();
+            with (formData) {
+                append("login", login);
+                append("operation", document.getElementById("operationControl").value);
+                append("marker", document.getElementById("marker").value);
+                append("campaign", document.getElementById("campaign").value);
+
+                var i = 1;
+                var partData = {};
+                with (data.getData()[0]) {
+                    Object.keys(rows).forEach(function (k) {
+                        if (k !== "len") {
+                            partData[k] = rows[k];
+                            if (i == rowPartSize) {
+                                append("data", new Blob([JSON.stringify(partData)], {type: "application/json"}));
+                                partData = {};
+                                i = 0;
+                            }
+                            i++;
+                        }
+                    });
+                }
+
+                if (Object.keys(partData).length > 0)
+                    append("data", new Blob([JSON.stringify(partData)], {type: "application/json"}));
+            }
+
+            var xhr = new XMLHttpRequest();
+            with (xhr) {
+                open("POST", "/mylist/execute");
+                upload.onprogress = function(event) {
+                    log("Загружено на сервер " + event.loaded + " байт из " + event.total + ".");
+                }
+                upload.onload = function() {
+                    log( "Данные полностью загружены на сервер.");
+                }
+                upload.onerror = function() {
+                    log("Произошла ошибка при загрузке данных на сервер.");
+                }
+                onprogress = function(event) {
+                    log("Получено с сервера " + event.loaded + " байт из " + event.total + ".");
+                }
+                onload = onerror = function() {
+                    if (this.status == 200) {
+                        log("Обработка завершена.");
+                    } else {
+                        log("Ошибка " + this.status + ".");
+                    }
+                }
+                onreadystatechange = function () {
+                    log("Изменилось состояние запроса: стадия = " + this.readyState + " статус = " + this.status + ".");
+                    if (this.readyState === XMLHttpRequest.DONE && this.status === 200) {
+                        json = JSON.parse(this.responseText);
+
+                        if (json.data)
+                            data.loadData(json.data);
+
+                        if (json.alert)
+                            log("Сообщение с сервера: " + json.alert);
+                    }
+                }
+                send(formData);
+            }
+        }
+
+        var btnClear = document.getElementById("btnClear");
+        btnClear.onclick = function () {
+            data.loadData([{
+                cols: {
+                    len: 38
+                },
+                rows: {
+                    len: 100000
+                }
+            }]);
+
+            document.getElementById("btnModal").disabled = false;
+        }
+
+        var btnExport = document.getElementById("btnExport");
+        btnExport.onlick = function () {
+
+        }
+
+        var operationControl = document.getElementById("operationControl");
+        operationControl.onchange = function (e) {
+            var infoArea = document.getElementById("infoArea");
+            infoArea.style.height = "auto";
+            if (e.srcElement.value) {
+                for (i = 0; i < info.length; i++) {
+                    if (info[i]["operationName"] === e.srcElement.value) {
+                        infoArea.value = info[i]["info"];
+                        infoArea.style.height = (infoArea.scrollHeight)+"px";
+                    }
+                }
+            }
+        }
+    </script>
+</body>
+</html>
