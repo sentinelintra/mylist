@@ -1,5 +1,6 @@
 package ru.sentinelcredit.mylist.repository;
 
+import org.springframework.data.domain.Sort;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.jpa.repository.query.Procedure;
@@ -10,7 +11,7 @@ import java.util.List;
 
 @Repository
 public interface MyListRepository extends JpaRepository<MyList, String> {
-    List<MyList> findByJobId(String jobId);
+    List<MyList> findByJobId(String jobId, Sort sort);
 
     @Procedure("ml_procedures.ml_explorer")
     void mlExplorer(String sBatchId, String xTYPE, String xCREATOR_ID, String xCAMPAIGN, String xMARKER, String sNewBatchId);

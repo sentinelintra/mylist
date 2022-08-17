@@ -2,6 +2,7 @@ package ru.sentinelcredit.mylist.controller;
 
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.server.reactive.ServerHttpResponse;
 import org.springframework.stereotype.Controller;
 import org.springframework.ui.Model;
 import org.springframework.web.bind.annotation.*;
@@ -11,11 +12,14 @@ import ru.sentinelcredit.mylist.repository.InfoRepository;
 import ru.sentinelcredit.mylist.repository.OperationRepository;
 import ru.sentinelcredit.mylist.service.MyListService;
 
+import javax.servlet.http.HttpServletResponse;
+import javax.servlet.http.HttpServletRequest;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
+import javax.servlet.http.HttpSession;
 
 @Slf4j
 @Controller
@@ -35,7 +39,7 @@ public class MyListController {
 
     @GetMapping("/mylist/ui")
     public String getOperation(@RequestParam(value = "login", required = true) String login,
-                           Model model) {
+                           Model model, HttpSession session) {
 
         log.trace("getOperation start login={}", login);
 
@@ -54,15 +58,15 @@ public class MyListController {
     @ResponseBody
     @PostMapping(value = "/mylist/execute", produces = "application/json")
     public String execOperation(@RequestParam(value = "login", required = true) String login,
-                           @RequestParam(value="operation", required = true) String operationName,
+                           @RequestParam(value = "operation", required = true) String operationName,
                            @RequestParam(value = "data", required = true) MultipartFile[] data,
                            @RequestParam(value = "marker", required = true) String marker,
                            @RequestParam(value = "campaign", required = true) String campaign,
-                           Model model) {
+                                HttpSession session) {
 
         if (login.length() == 0 || operationName.length() == 0 || data.length == 0)
             return "{\"alert\": \"Обязательные параметры не заполнены.\"}";
 
-        return myListService.executeData(login, operationName, data, marker, campaign);
+        return myListService.executeData(login, operationName, data, marker, campaign, session);
     }
 }

@@ -6,6 +6,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.exception.ExceptionUtils;
 import org.json.JSONArray;
 import org.json.JSONObject;
+import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 import ru.sentinelcredit.mylist.model.OperationColumn;
@@ -14,6 +15,8 @@ import ru.sentinelcredit.mylist.repository.ColumnRepository;
 import ru.sentinelcredit.mylist.repository.MyListRepository;
 import ru.sentinelcredit.mylist.repository.UserRepository;
 
+import javax.servlet.http.HttpServletRequest;
+import javax.servlet.http.HttpSession;
 import javax.transaction.Transactional;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
@@ -28,10 +31,11 @@ public class MyListService {
     private final ColumnRepository columnRepository;
     private final MyListRepository myListRepository;
     private String userId;
-    private String jobId;
+//    private String jobId;
     private String operationName;
-    private String newJobId = "";
+//    private String newJobId = "";
     private List<OperationColumn> operationColumnList;
+    private HttpSession session;
 
     private MyList rowJsonToMyList (JSONObject jsonObject) throws Exception {
         MyList myList = new MyList();
@@ -40,7 +44,7 @@ public class MyListService {
         for (OperationColumn column: operationColumnList) {
             if (column.getColumnNum() == null || column.getColumnNum() == 0) {
                 log.error("Ошибка в описании операции. userId={}. jobId={}. operationName={}. operationColumnList={}. jsonObject={}.",
-                        userId, jobId, operationName, operationColumnList, jsonObject);
+                        userId, session.getAttribute("jobId"), operationName, operationColumnList, jsonObject);
                 throw new Exception("Ошибка в описании операции.");
             }
 
@@ -62,7 +66,7 @@ public class MyListService {
 
         myList.setCreatedBy(userId);
         myList.setLastUpdBy(userId);
-        myList.setJobId(jobId);
+        myList.setJobId(session.getAttribute("jobId").toString());
         myList.setTypeCd(operationName);
         myList.setDbLastUpdSrc("JPA_MY_LIST");
 
@@ -91,7 +95,7 @@ public class MyListService {
         if (myListList.size() == 0)
             return false;
 
-        log.trace("saveAll jobId={} start", this.jobId);
+        log.trace("saveAll jobId={} start", session.getAttribute("jobId"));
 
         myListRepository.saveAll(myListList);
 
@@ -162,21 +166,30 @@ public class MyListService {
     }
 
     @Transactional (Transactional.TxType.SUPPORTS)
-    public String executeData (String login, String operationName, MultipartFile[] data, String marker, String campaign) {
+    public String executeData (String login, String operationName, MultipartFile[] data, String marker, String campaign, HttpSession session) {
         log.trace("executeData start login={} operation={} marker={} campaign={} data={}", login, operationName, marker, campaign, data.length);
 
         try {
             this.userId = userRepository.findByLogin(login).get(0).getRowId();
-            this.jobId = myListRepository.getNextSblLikeId();
+//            this.jobId = myListRepository.getNextSblLikeId();
             this.operationName = operationName;
             this.operationColumnList = columnRepository.findByOperationName(operationName);
-
-            if (operationName == "Подтягивание разной даты в отчётный файл" ||
-                    operationName == "Выгрузка телефонов" ||
-                    operationName == "Импорт телефонов" ||
-                    operationName == "Выгрузка активностей 2" ||
-                    operationName == "Выгрузка активностей")
-                this.newJobId = myListRepository.getNextSblLikeId();
+/*
+            this.newJobId = (operationName.equals("Подтягивание разной даты в отчётный файл") ||
+                    operationName.equals("Выгрузка телефонов") ||
+                    operationName.equals("Импорт телефонов") ||
+                    operationName.equals("Выгрузка активностей 2") ||
+                    operationName.equals("Выгрузка активностей") ||
+                    operationName.equals("Отчет по откликам")) ? this.newJobId = myListRepository.getNextSblLikeId() : "";
+*/
+            session.setAttribute("jobId", myListRepository.getNextSblLikeId());
+            session.setAttribute("newJobId", (operationName.equals("Подтягивание разной даты в отчётный файл") ||
+                    operationName.equals("Выгрузка телефонов") ||
+                    operationName.equals("Импорт телефонов") ||
+                    operationName.equals("Выгрузка активностей 2") ||
+                    operationName.equals("Выгрузка активностей") ||
+                    operationName.equals("Отчет по откликам")) ? myListRepository.getNextSblLikeId() : "");
+            this.session = session;
 
             boolean dataExists = false;
             for (int i = 0; i < data.length; i++) {
@@ -191,14 +204,19 @@ public class MyListService {
             if (!dataExists)
                 return "{\"alert\": \"Данных для обработки не найдено.\"}";
 
-            log.trace("ml_explorer start jobId={} newJobId={}", jobId, newJobId);
+            log.trace("ml_explorer start jobId={} newJobId={}", session.getAttribute("jobId"), session.getAttribute("newJobId"));
 
-            myListRepository.mlExplorer(jobId, operationName, userId, marker, campaign, newJobId);
+            myListRepository.mlExplorer(session.getAttribute("jobId").toString(),
+                    operationName, userId, campaign, marker, session.getAttribute("newJobId").toString());
 
             log.trace("ml_explorer end");
-            log.trace("findByJobId={}", (newJobId == "") ? jobId : newJobId);
+            log.trace("findByJobId={}", (session.getAttribute("newJobId") == "") ?
+                    session.getAttribute("jobId") : session.getAttribute("newJobId"));
 
-            JSONArray jsonArray = extractData(myListRepository.findByJobId((newJobId == "") ? jobId : newJobId));
+            JSONArray jsonArray = extractData(myListRepository.findByJobId((session.getAttribute("newJobId") == "") ?
+                            session.getAttribute("jobId").toString() : session.getAttribute("newJobId").toString(),
+                    Sort.by(Sort.Direction.ASC, "createdBy")));
+
             JSONObject jsonObject = new JSONObject();
             jsonObject.put("alert", "Выполнено успешно.");
             jsonObject.put("data", jsonArray);
